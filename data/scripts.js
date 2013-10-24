@@ -1,5 +1,5 @@
 exports.BattleScripts = {
-	gen: 5,
+	gen: 6,
 	runMove: function(move, pokemon, target, sourceEffect) {
 		if (!sourceEffect && toId(move) !== 'struggle') {
 			var changedMove = this.runEvent('OverrideDecision', pokemon, target, move);
@@ -477,10 +477,48 @@ exports.BattleScripts = {
 		}
 		return damage;
 	},
+
+	runMegaEvo: function(pokemon) {
+		var side = pokemon.side;
+		var item = this.getItem(pokemon.item);
+		if (!item.megaStone) return false;
+		if (side.megaEvo) return false;
+		var template = this.getTemplate(item.megaStone);
+		if (!template.isMega) return false;
+		if (pokemon.baseTemplate.species !== template.baseSpecies) return false;
+
+		// okay, mega evolution is possible
+		this.add('-formechange', pokemon, template.species);
+		this.add('message', template.baseSpecies+" mega-evolved into "+template.species+"!");
+		pokemon.formeChange(template);
+		pokemon.baseTemplate = template; // mega evolution is permanent :o
+		pokemon.setAbility(template.abilities['0']);
+
+		side.megaEvo = 1;
+		return true;
+	},
+
 	isAdjacent: function(pokemon1, pokemon2) {
 		if (!pokemon1.fainted && !pokemon2.fainted && pokemon2.position !== pokemon1.position && Math.abs(pokemon2.position-pokemon1.position) <= 1) {
 			return true;
 		}
+	},
+	checkAbilities: function(selectedAbilities, defaultAbilities) {
+		if (!selectedAbilities.length) return true;
+		var selectedAbility = selectedAbilities.pop();
+		var isValid = false;
+		for (var i=0; i<defaultAbilities.length; i++) {
+			var defaultAbility = defaultAbilities[i];
+			if (!defaultAbility) break;
+			if (defaultAbility.indexOf(selectedAbility) !== -1) {
+				defaultAbilities.splice(i, 1);
+				isValid = this.checkAbilities(selectedAbilities, defaultAbilities);
+				if (isValid) break;
+				defaultAbilities.splice(i, 0, defaultAbility);
+			}
+		}
+		if (!isValid) selectedAbilities.push(selectedAbility);
+		return isValid;
 	},
 	getTeam: function(side, team) {
 		var format = side.battle.getFormat();
@@ -555,13 +593,13 @@ exports.BattleScripts = {
 
 			//random gender--already handled by PS?
 
-			//random ability (unreleased DW are par for the course)
+			//random ability (unreleased hidden are par for the course)
 			var abilities = [template.abilities['0']];
 			if (template.abilities['1']) {
 				abilities.push(template.abilities['1']);
 			}
-			if (template.abilities['DW']) {
-				abilities.push(template.abilities['DW']);
+			if (template.abilities['H']) {
+				abilities.push(template.abilities['H']);
 			}
 			var ability = abilities.sample();
 
@@ -798,7 +836,7 @@ exports.BattleScripts = {
 				};
 				// Moves which boost Special Attack:
 				var SpecialSetup = {
-					nastyplot:1, tailglow:1, quiverdance:1, calmmind:1
+					nastyplot:1, tailglow:1, quiverdance:1, calmmind:1, chargebeam:1
 				};
 				// Moves which boost Attack AND Special Attack:
 				var MixedSetup = {
@@ -936,11 +974,11 @@ exports.BattleScripts = {
 				case 'bugbite':
 					if (hasMove['uturn']) rejected = true;
 					break;
-				case 'crosschop': case 'hijumpkick':
+				case 'crosschop': case 'highjumpkick':
 					if (hasMove['closecombat']) rejected = true;
 					break;
 				case 'drainpunch':
-					if (hasMove['closecombat'] || hasMove['hijumpkick'] || hasMove['crosschop']) rejected = true;
+					if (hasMove['closecombat'] || hasMove['highjumpkick'] || hasMove['crosschop']) rejected = true;
 					break;
 				case 'thunderbolt':
 					if (hasMove['discharge'] || hasMove['voltswitch'] || hasMove['thunder']) rejected = true;
@@ -1131,8 +1169,8 @@ exports.BattleScripts = {
 			if (template.abilities['1']) {
 				abilities.push(template.abilities['1']);
 			}
-			if (template.abilities['DW']) {
-				abilities.push(template.abilities['DW']);
+			if (template.abilities['H']) {
+				abilities.push(template.abilities['H']);
 			}
 			abilities.sort(function(a,b){
 				return this.getAbility(b).rating - this.getAbility(a).rating;
@@ -1423,8 +1461,6 @@ exports.BattleScripts = {
 			BL: 76,
 			OU: 74,
 			CAP: 74,
-			G4CAP: 74,
-			G5CAP: 74,
 			Unreleased: 74,
 			Uber: 70
 		};
@@ -1471,7 +1507,7 @@ exports.BattleScripts = {
 		var pokemonLeft = 0;
 		var pokemon = [];
 		for (var i in this.data.FormatsData) {
-			if (this.data.FormatsData[i].viableMoves) {
+			if (this.data.FormatsData[i].viableMoves && this.data.FormatsData[i].num < 650) {
 				keys.push(i);
 			}
 		}
@@ -1500,7 +1536,7 @@ exports.BattleScripts = {
 			if (tier === 'Uber' && uberCount > 1 && Math.random()*5>1) continue;
 
 			// CAPs have 20% the normal rate
-			if ((tier === 'G4CAP' || tier === 'G5CAP') && Math.random()*5>1) continue;
+			if (tier === 'CAP' && Math.random()*5>1) continue;
 			// Arceus formes have 1/17 the normal rate each (so Arceus as a whole has a normal rate)
 			if (keys[i].substr(0,6) === 'arceus' && Math.random()*17>1) continue;
 			// Basculin formes have 1/2 the normal rate each (so Basculin as a whole has a normal rate)
@@ -1565,49 +1601,39 @@ exports.BattleScripts = {
 		}
 		return pokemon;
 	},
-	randomSeasonalSSTeam: function(side) {
-		var crypto = require('crypto');
-		var hash = parseInt(crypto.createHash('md5').update(toId(side.name)).digest('hex').substr(0, 8), 16);
-		var randNums = [
-			(13 * hash + 11) % 649,
-			(18 * hash + 66) % 649,
-			(25 * hash + 73) % 649,
-			(1 * hash + 16) % 649,
-			(23 * hash + 132) % 649,
-			(5 * hash + 6) % 649
+	randomSeasonalOFTeam: function(side) {
+		var seasonalPokemonList = [
+			'absol', 'alakazam', 'banette', 'beheeyem', 'bellossom', 'bisharp', 'blissey', 'cacturne', 'carvanha', 'chandelure',
+			'cofagrigus', 'conkeldurr', 'crawdaunt', 'darkrai', 'deino', 'drapion', 'drifblim', 'drifloon', 'dusclops',
+			'dusknoir', 'duskull', 'electivire', 'frillish', 'froslass', 'gallade', 'gardevoir', 'gastly', 'gengar', 'giratina',
+			'golett', 'golurk', 'gothitelle', 'hariyama', 'haunter', 'hitmonchan', 'hitmonlee', 'hitmontop', 'honchkrow', 'houndoom',
+			'houndour', 'hydreigon', 'hypno', 'infernape', 'jellicent', 'jynx', 'krokorok', 'krookodile', 'lampent', 'leavanny',
+			'liepard', 'lilligant', 'litwick', 'lopunny', 'lucario', 'ludicolo', 'machamp', 'magmortar', 'mandibuzz', 'medicham',
+			'meloetta', 'mienshao', 'mightyena', 'misdreavus', 'mismagius', 'mrmime', 'murkrow', 'nuzleaf', 'pawniard', 'poochyena',
+			'probopass', 'purrloin', 'roserade', 'rotom', 'sableye', 'sandile', 'sawk', 'scrafty', 'scraggy', 'sharpedo', 'shedinja',
+			'shiftry', 'shuppet', 'skuntank', 'sneasel', 'snorlax', 'spiritomb', 'stunky', 'throh', 'toxicroak', 'tyranitar', 'umbreon',
+			'vullaby', 'weavile', 'wobbuffet', 'yamask', 'zoroark', 'zorua', 'zweilous'
 		];
-		var randoms = {};
-		for (var i=0; i<6; i++) {
-			if (randNums[i] < 1) randNums[i] = 1;
-			randoms[randNums[i]] = true;
-		}
+		seasonalPokemonList = seasonalPokemonList.randomize();
 		var team = [];
-		var mons = 0;
-		var fashion = [
-			'Choice Scarf', 'Choice Specs', 'Silk Scarf', 'Wise Glasses', 'Choice Band', 'Wide Lens',
-			'Zoom Lens', 'Destiny Knot', 'BlackGlasses', 'Expert Belt', 'Black Belt', 'Macho Brace',
-			'Focus Sash', "King's Rock", 'Muscle Band', 'Mystic Water', 'Binding Band', 'Rocky Helmet'
-		];
-		for (var p in this.data.Pokedex) {
-			if (this.data.Pokedex[p].num in randoms) {
-				var set = this.randomSet(this.getTemplate(p), mons);
-				fashion = fashion.randomize();
-				if (fashion.indexOf(set.item) === -1) set.item = fashion[0];
-				team.push(set);
-				delete randoms[this.data.Pokedex[p].num];
-				mons++;
-			}
-		}
-		// Just in case the randoms generated the same number... highly unlikely
-		var defaults = ['politoed', 'toxicroak', 'articuno', 'jirachi', 'tentacruel', 'liepard'].randomize();
-		while (mons < 6) {
-			var set = this.randomSet(this.getTemplate(defaults[mons]), mons);
-			fashion = fashion.randomize();
-			if (fashion.indexOf(set.item) === -1) set.item = fashion[0];
-			team.push(set);
-			mons++;
-		}
 
+		for (var i=0; i<6; i++) {
+			var pokemon = seasonalPokemonList[i];
+			var template = this.getTemplate(pokemon);
+			var set = this.randomSet(template, i);
+			var trickindex = -1;
+			for (var j=0, l=set.moves.length; j<l; j++) {
+				if (set.moves[j].toLowerCase() === 'trick') {
+					trickindex = j;
+				}
+			}
+			if (trickindex === -1 || trickindex === 2) {
+				set.moves[3] = 'trick';
+			}
+			set.moves[2] = 'Present';
+			team.push(set);
+		}
+		
 		return team;
 	}
 };

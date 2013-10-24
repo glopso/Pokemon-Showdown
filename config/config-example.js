@@ -187,6 +187,8 @@ exports.groups = {
 		id: "admin",
 		name: "Administrator",
 		root: true,
+		globalonly: true,
+		gdeclare: true,
 		rank: 6
 	},
 	'&': {
@@ -201,6 +203,7 @@ exports.groups = {
 		rangeban: true,
 		potd: true,
 		disableladder: true,
+		globalonly: true,
 		rank: 5
 	},
 	'#': {
@@ -209,9 +212,10 @@ exports.groups = {
 		inherit: '@',
 		jurisdiction: 'u',
 		roommod: true,
-		roomonly: true,
+		roomdriver: true,
 		declare: true,
 		modchatall: true,
+		roomonly: true,
 		rank: 4
 	},
 	'@': {
@@ -221,6 +225,7 @@ exports.groups = {
 		jurisdiction: 'u',
 		ban: true,
 		modchat: true,
+		roomvoice: true,
 		forcerename: true,
 		ip: true,
 		alts: '@u',
@@ -242,7 +247,6 @@ exports.groups = {
 		alts: '%u',
 		bypassblocks: 'u%@&~',
 		receiveauthmessages: true,
-		roomvoice: true,
 		rank: 2
 	},
 	'+': {
